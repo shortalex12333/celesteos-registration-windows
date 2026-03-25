@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CelesteOS — Download</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      min-height: 100vh;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container { width: 100%; max-width: 440px; }
+    .logo { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: #64748b; font-size: 14px; margin-bottom: 32px; }
+
+    .card {
+      background: rgba(30, 41, 59, 0.85);
+      border-radius: 12px;
+      padding: 32px;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      backdrop-filter: blur(12px);
+    }
+    .card h2 { font-size: 18px; color: #94a3b8; margin-bottom: 8px; font-weight: 500; }
+    .card p.hint { color: #64748b; font-size: 13px; margin-bottom: 20px; }
+
+    .input-group { margin-bottom: 16px; }
+    .input-group label { display: block; font-size: 13px; color: #94a3b8; margin-bottom: 6px; }
+    .input-group input {
+      width: 100%; padding: 12px 14px; border-radius: 8px;
+      border: 1px solid #334155; background: #0f172a; color: #e2e8f0;
+      font-size: 16px; outline: none; transition: border-color 0.2s;
+    }
+    .input-group input:focus { border-color: #3b82f6; }
+    .input-group input.code-input {
+      text-align: center; font-size: 24px; letter-spacing: 6px; font-weight: 600;
+    }
+
+    .btn {
+      width: 100%; padding: 13px; border-radius: 8px; border: none;
+      background: #3b82f6; color: #fff; font-size: 15px; font-weight: 600;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .btn:hover { background: #2563eb; }
+    .btn:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+
+    .btn-download {
+      background: #10b981; font-size: 16px; padding: 16px;
+    }
+    .btn-download:hover { background: #059669; }
+
+    .msg { margin-top: 12px; font-size: 13px; min-height: 20px; }
+    .msg.error { color: #ef4444; }
+    .msg.success { color: #10b981; }
+
+    .step { display: none; }
+    .step.active { display: block; }
+
+    .yacht-name { color: #60a5fa; font-size: 20px; font-weight: 600; margin: 12px 0 20px; }
+    .back-link { color: #64748b; font-size: 13px; cursor: pointer; margin-top: 16px; display: inline-block; }
+    .back-link:hover { color: #94a3b8; }
+
+    .spinner {
+      display: inline-block; width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff;
+      border-radius: 50%; animation: spin 0.6s linear infinite;
+      vertical-align: middle; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">CelesteOS</div>
+    <div class="subtitle">Download Portal</div>
+
+    <!-- Step 1: Enter email -->
+    <div class="card step active" id="step-email">
+      <h2>Download your installer</h2>
+      <p class="hint">Enter the email address associated with your yacht purchase.</p>
+      <div class="input-group">
+        <label for="email">Email address</label>
+        <input type="email" id="email" placeholder="buyer@example.com" autocomplete="email">
+      </div>
+      <button class="btn" id="btn-send-code" onclick="requestCode()">Send verification code</button>
+      <div class="msg" id="msg-email"></div>
+    </div>
+
+    <!-- Step 2: Enter code -->
+    <div class="card step" id="step-code">
+      <h2>Check your email</h2>
+      <p class="hint">Enter the 6-digit code we sent to <strong id="masked-email"></strong></p>
+      <div class="input-group" style="margin-bottom:12px;">
+        <label for="verify-email">Email</label>
+        <input type="email" id="verify-email" placeholder="buyer@example.com" autocomplete="email">
+      </div>
+      <div class="input-group">
+        <label for="code">Verification code</label>
+        <input type="text" id="code" class="code-input" maxlength="6" placeholder="000000"
+               inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code">
+      </div>
+      <button class="btn" id="btn-verify" onclick="verifyCode()">Verify</button>
+      <div class="msg" id="msg-code"></div>
+      <span class="back-link" onclick="goBack()">Use a different email</span>
+    </div>
+
+    <!-- Step 3: Download -->
+    <div class="card step" id="step-download">
+      <h2>Ready to download</h2>
+      <div class="yacht-name" id="download-yacht-name"></div>
+      <a id="download-link" href="#" style="text-decoration:none;">
+        <button class="btn btn-download" id="download-btn">Download CelesteOS Installer</button>
+      </a>
+      <p class="hint" id="download-hint" style="margin-top:16px;">
+        After downloading, run the installer and follow the on-screen instructions to begin setup.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    // Registration API base — same origin when served by FastAPI, or override for dev
+    const API = window.location.origin;
+
+    let userEmail = '';
+
+    function showStep(id) {
+      document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+    }
+
+    function setMsg(id, text, isError) {
+      const el = document.getElementById(id);
+      el.textContent = text;
+      el.className = 'msg ' + (isError ? 'error' : 'success');
+    }
+
+    function setLoading(btnId, loading) {
+      const btn = document.getElementById(btnId);
+      if (loading) {
+        btn.disabled = true;
+        btn.dataset.originalText = btn.textContent;
+        btn.innerHTML = '<span class="spinner"></span>Please wait...';
+      } else {
+        btn.disabled = false;
+        btn.textContent = btn.dataset.originalText || btn.textContent;
+      }
+    }
+
+    async function requestCode() {
+      const email = document.getElementById('email').value.trim();
+      if (!email || !email.includes('@')) {
+        setMsg('msg-email', 'Please enter a valid email address.', true);
+        return;
+      }
+
+      setLoading('btn-send-code', true);
+      setMsg('msg-email', '', false);
+
+      try {
+        const resp = await fetch(API + '/api/request-download-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+          userEmail = email;
+          document.getElementById('masked-email').textContent = email;
+          document.getElementById('verify-email').value = email;
+          showStep('step-code');
+          document.getElementById('code').focus();
+        } else {
+          setMsg('msg-email', data.error || 'Something went wrong.', true);
+        }
+      } catch (e) {
+        setMsg('msg-email', 'Network error. Please try again.', true);
+      } finally {
+        setLoading('btn-send-code', false);
+      }
+    }
+
+    async function verifyCode() {
+      const code = document.getElementById('code').value.trim();
+      if (code.length !== 6) {
+        setMsg('msg-code', 'Please enter the full 6-digit code.', true);
+        return;
+      }
+
+      setLoading('btn-verify', true);
+      setMsg('msg-code', '', false);
+
+      try {
+        // Always read email from the visible field
+        const emailToVerify = document.getElementById('verify-email').value.trim();
+        if (!emailToVerify) {
+          setMsg('msg-code', 'Enter your email address above.', true);
+          setLoading('btn-verify', false);
+          return;
+        }
+        const resp = await fetch(API + '/api/verify-download-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailToVerify, code }),
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+          document.getElementById('download-yacht-name').textContent = data.yacht_name || '';
+          document.getElementById('download-link').href = data.download_url;
+          showStep('step-download');
+        } else {
+          const msg = data.error || 'Invalid code.';
+          const remaining = data.attempts_remaining;
+          const extra = remaining !== undefined ? ` (${remaining} attempts remaining)` : '';
+          setMsg('msg-code', msg + extra, true);
+        }
+      } catch (e) {
+        setMsg('msg-code', 'Network error. Please try again.', true);
+      } finally {
+        setLoading('btn-verify', false);
+      }
+    }
+
+    function goBack() {
+      document.getElementById('code').value = '';
+      setMsg('msg-code', '', false);
+      showStep('step-email');
+    }
+
+    // Enter key support
+    document.getElementById('email').addEventListener('keypress', e => {
+      if (e.key === 'Enter') requestCode();
+    });
+    document.getElementById('code').addEventListener('keypress', e => {
+      if (e.key === 'Enter') verifyCode();
+    });
+    // Auto-advance on 6 digits
+    document.getElementById('code').addEventListener('input', e => {
+      e.target.value = e.target.value.replace(/\D/g, '');
+      if (e.target.value.length === 6) verifyCode();
+    });
+  </script>
+</body>
+</html>
