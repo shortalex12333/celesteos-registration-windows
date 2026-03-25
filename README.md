@@ -48,7 +48,11 @@ The only platform difference is in the download portal, which serves different i
 - macOS: `.dmg` (disk image, drag to Applications)
 - Windows: `.exe` (Inno Setup installer)
 
-The storage path is read from `fleet_registry.dmg_storage_path` (or `exe_storage_path` for Windows) — no code changes needed per platform.
+The installer type is determined by `fleet_registry.installer_type` (`dmg` or `exe`). The correct storage path is built automatically:
+- macOS: `dmg/{yacht_id}/CelesteOS-{yacht_id}.dmg`
+- Windows: `exe/{yacht_id}/CelesteOS-Setup-{yacht_id}.exe`
+
+The download portal also detects the user's OS via `navigator.userAgent` and shows platform-appropriate instructions.
 
 ## Running Locally
 
@@ -84,9 +88,9 @@ docker compose up --build
 
 Uses the **master** Supabase instance (`qvzmkaamzaqxpzbewjxe`). Required tables:
 
-- `fleet_registry` — Yacht records with buyer email, activation state
+- `fleet_registry` — Yacht records with buyer email, activation state, `installer_type` (`dmg`/`exe`)
 - `installation_2fa_codes` — Hashed verification codes with expiry and attempt tracking
-- `download_links` — Time-limited download tokens
+- `download_links` — Time-limited download tokens with `platform` and `package_path`
 
 Migrations are in `supabase/migrations/`. The `installation_2fa_codes` table is separate from the user-account `twofa_codes` table (different schema, different purpose).
 

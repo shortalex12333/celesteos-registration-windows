@@ -129,6 +129,12 @@
 
     let userEmail = '';
 
+    function detectPlatform() {
+      const ua = navigator.userAgent || '';
+      if (ua.indexOf('Win') !== -1) return 'windows';
+      return 'macos';
+    }
+
     function showStep(id) {
       document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
       document.getElementById(id).classList.add('active');
@@ -214,6 +220,19 @@
         if (data.success) {
           document.getElementById('download-yacht-name').textContent = data.yacht_name || '';
           document.getElementById('download-link').href = data.download_url;
+
+          // Update button and hint based on platform returned by API
+          const platform = data.platform || detectPlatform();
+          const btn = document.getElementById('download-btn');
+          const hint = document.getElementById('download-hint');
+          if (platform === 'windows') {
+            btn.textContent = 'Download CelesteOS Installer (.exe)';
+            hint.textContent = 'After downloading, run the installer and follow the setup wizard. Launch CelesteOS from the Start menu to begin setup.';
+          } else {
+            btn.textContent = 'Download CelesteOS Installer (.dmg)';
+            hint.textContent = 'After downloading, open the DMG and drag CelesteOS to your Applications folder. Launch it to begin setup.';
+          }
+
           showStep('step-download');
         } else {
           const msg = data.error || 'Invalid code.';

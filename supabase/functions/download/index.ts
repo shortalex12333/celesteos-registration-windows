@@ -1,19 +1,19 @@
 /**
  * /download Edge Function
  * ========================
- * Secure DMG download endpoint.
+ * Secure installer download endpoint (macOS DMG or Windows EXE).
  *
  * Flow:
  * 1. Purchase complete -> generate download_token
  * 2. Email buyer with download link: /download?token=xxx
- * 3. Buyer clicks link -> validate token, stream DMG
+ * 3. Buyer clicks link -> validate token, stream installer
  * 4. Mark token as used (single-use)
  *
  * Security:
  * - Tokens are 256-bit random, hashed in database
  * - Single-use, expire after 7 days
  * - IP logging and rate limiting
- * - DMG served from Supabase Storage (signed URL)
+ * - Installer served from Supabase Storage (signed URL)
  */
 
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
@@ -64,7 +64,8 @@ serve(async (req: Request) => {
         fleet_registry (
           yacht_id,
           yacht_name,
-          buyer_email
+          buyer_email,
+          installer_type
         )
       `)
       .eq("token_hash", tokenHash)
@@ -121,6 +122,9 @@ serve(async (req: Request) => {
       })
       .eq("id", linkData.id);
 
+    // Determine platform from the stored download link or fleet registry
+    const platform = linkData.platform || (linkData.fleet_registry?.installer_type === "exe" ? "windows" : "macos");
+
     // Log successful download
     await AuditLog.log({
       yachtId: linkData.yacht_id,
@@ -128,16 +132,24 @@ serve(async (req: Request) => {
       details: {
         download_number: linkData.download_count + 1,
         yacht_name: linkData.fleet_registry?.yacht_name,
+        platform,
       },
       ...clientInfo,
     });
 
-    // Generate signed URL for DMG in Supabase Storage
-    const dmgPath = `dmg/${linkData.yacht_id}/CelesteOS-${linkData.yacht_id}.dmg`;
+    // Use package_path from download_links if available, otherwise build from installer_type
+    let installerPath: string;
+    if (linkData.package_path) {
+      installerPath = linkData.package_path;
+    } else if (platform === "windows") {
+      installerPath = `exe/${linkData.yacht_id}/CelesteOS-Setup-${linkData.yacht_id}.exe`;
+    } else {
+      installerPath = `dmg/${linkData.yacht_id}/CelesteOS-${linkData.yacht_id}.dmg`;
+    }
 
     const { data: signedUrl, error: signError } = await db.storage
       .from("installers")
-      .createSignedUrl(dmgPath, 3600); // 1 hour expiry
+      .createSignedUrl(installerPath, 3600); // 1 hour expiry
 
     if (signError || !signedUrl) {
       console.error("Signed URL error:", signError);
@@ -147,7 +159,8 @@ serve(async (req: Request) => {
         generateDownloadPage(
           linkData.fleet_registry?.yacht_name || linkData.yacht_id,
           null,
-          "pending"
+          "pending",
+          platform
         ),
         { headers: { "Content-Type": "text/html" } }
       );
@@ -170,13 +183,33 @@ serve(async (req: Request) => {
 });
 
 /**
- * Generate download page HTML.
+ * Generate download page HTML with platform-aware instructions.
  */
 function generateDownloadPage(
   yachtName: string,
   downloadUrl: string | null,
-  status: "ready" | "pending"
+  status: "ready" | "pending",
+  platform: string
 ): string {
+  const isMac = platform !== "windows";
+  const fileLabel = isMac ? "CelesteOS.dmg" : "CelesteOS-Setup.exe";
+  const instructions = isMac
+    ? `<ol>
+        <li>Download and open the DMG file</li>
+        <li>Drag CelesteOS to Applications</li>
+        <li>Launch CelesteOS from Applications</li>
+        <li>Grant requested permissions when prompted</li>
+        <li>Check your email and click the activation link</li>
+        <li>Installation completes automatically</li>
+      </ol>`
+    : `<ol>
+        <li>Download and run the installer (.exe)</li>
+        <li>Follow the setup wizard to install CelesteOS</li>
+        <li>Launch CelesteOS from the Start menu</li>
+        <li>Check your email and click the activation link</li>
+        <li>Installation completes automatically</li>
+      </ol>`;
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -234,21 +267,14 @@ function generateDownloadPage(
     <p>Your personalized installer for <span class="yacht-name">${yachtName}</span></p>
 
     ${status === "ready" && downloadUrl ? `
-    <a href="${downloadUrl}" class="btn">Download CelesteOS.dmg</a>
+    <a href="${downloadUrl}" class="btn">Download ${fileLabel}</a>
     ` : `
     <p style="color: #f59e0b;">Your installer is being prepared. Please check back shortly.</p>
     `}
 
     <div class="instructions">
       <p><strong>Installation Instructions:</strong></p>
-      <ol>
-        <li>Download and open the DMG file</li>
-        <li>Drag CelesteOS to Applications</li>
-        <li>Launch CelesteOS from Applications</li>
-        <li>Grant requested permissions when prompted</li>
-        <li>Check your email and click the activation link</li>
-        <li>Installation completes automatically</li>
-      </ol>
+      ${instructions}
     </div>
   </div>
 </body>

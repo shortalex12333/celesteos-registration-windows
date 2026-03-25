@@ -389,12 +389,20 @@ async def verify_download_code(req: VerifyDownloadCodeRequest):
 
     await _validate_2fa(yacht["yacht_id"], req.code, purpose="download")
 
+    # Determine installer type and build correct storage path
+    installer_type = yacht.get("installer_type", "dmg")
+    if installer_type == "exe":
+        package_path = f"exe/{yacht['yacht_id']}/CelesteOS-Setup-{yacht['yacht_id']}.exe"
+        platform = "windows"
+    else:
+        package_path = f"dmg/{yacht['yacht_id']}/CelesteOS-{yacht['yacht_id']}.dmg"
+        platform = "macos"
+
     # Generate a time-limited download token and store in download_links
     download_token = secrets.token_hex(32)
     # Edge Function looks up by token_hash = SHA-256(raw_token)
     token_hash = hashlib.sha256(download_token.encode("utf-8")).hexdigest()
     twofa_code = secrets.token_hex(8)  # internal ref, not user-facing
-    dmg_path = yacht.get("dmg_storage_path") or f"dmg/{yacht['yacht_id']}/CelesteOS-{yacht['yacht_id']}.dmg"
     expires = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
 
     async with httpx.AsyncClient() as client:
@@ -405,7 +413,8 @@ async def verify_download_code(req: VerifyDownloadCodeRequest):
                 "download_token": download_token,
                 "token_hash": token_hash,
                 "twofa_code": twofa_code,
-                "package_path": dmg_path,
+                "package_path": package_path,
+                "platform": platform,
                 "is_activation_link": False,
                 "expires_at": expires,
                 "download_count": 0,
@@ -420,7 +429,7 @@ async def verify_download_code(req: VerifyDownloadCodeRequest):
     # Generate a signed Storage URL (1 hour expiry) — browser can download directly
     async with httpx.AsyncClient() as client:
         sign_resp = await client.post(
-            f"{MASTER_SUPABASE_URL}/storage/v1/object/sign/installers/{dmg_path}",
+            f"{MASTER_SUPABASE_URL}/storage/v1/object/sign/installers/{package_path}",
             json={"expiresIn": 3600},
             headers=_sb_headers(),
             timeout=15,
@@ -435,12 +444,13 @@ async def verify_download_code(req: VerifyDownloadCodeRequest):
 
     yacht_name = yacht.get("yacht_name", yacht["yacht_id"])
 
-    logger.info("Download token generated for yacht %s", yacht["yacht_id"])
+    logger.info("Download token generated for yacht %s (platform=%s)", yacht["yacht_id"], platform)
 
     return {
         "success": True,
         "download_url": download_url,
         "yacht_name": yacht_name,
+        "platform": platform,
     }
 
 

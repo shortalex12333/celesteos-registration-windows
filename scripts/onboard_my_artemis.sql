@@ -36,7 +36,9 @@ BEGIN
     RAISE NOTICE 'yacht_id: %', v_yacht_id;
     RAISE NOTICE 'yacht_id_hash: %', encode(digest(v_yacht_id, 'sha256'), 'hex');
     RAISE NOTICE '====================================';
-    RAISE NOTICE 'Write these to ~/.celesteos/install_manifest.json';
+    RAISE NOTICE 'Write these to the config dir install_manifest.json';
+    RAISE NOTICE '  macOS: ~/.celesteos/install_manifest.json';
+    RAISE NOTICE '  Windows: %%APPDATA%%\CelesteOS\install_manifest.json';
 END $$;
 
 -- Copy yacht_id and hash from the output above
