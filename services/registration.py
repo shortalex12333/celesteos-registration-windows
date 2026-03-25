@@ -439,8 +439,10 @@ async def verify_download_code(req: VerifyDownloadCodeRequest):
             download_url = f"{MASTER_SUPABASE_URL}/storage/v1{signed_path}"
         else:
             logger.error("Failed to sign URL: %d %s", sign_resp.status_code, sign_resp.text)
-            # Fallback to Edge Function
-            download_url = f"{MASTER_SUPABASE_URL}/functions/v1/download?token={download_token}"
+            raise HTTPException(500, {
+                "success": False,
+                "error": "Installer file not found in storage. It may not have been built yet. Contact support.",
+            })
 
     yacht_name = yacht.get("yacht_name", yacht["yacht_id"])
 
