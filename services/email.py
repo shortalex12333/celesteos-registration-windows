@@ -150,6 +150,18 @@ class GraphEmailService:
         html = _render_download_code_template(code, yacht_name)
         return self.send_email(to, subject, html)
 
+    def send_welcome_email(self, to: str, yacht_name: str, portal_url: str) -> bool:
+        """Send a branded welcome email with the download portal link."""
+        if self.debug_mode:
+            print(f"\n{'='*50}")
+            print(f"  WELCOME EMAIL for {yacht_name}")
+            print(f"  To: {to}")
+            print(f"  Portal: {portal_url}")
+            print(f"{'='*50}\n", flush=True)
+        subject = f"Welcome to CelesteOS — {yacht_name}"
+        html = _render_welcome_template(yacht_name, portal_url)
+        return self.send_email(to, subject, html)
+
 
 # ---------------------------------------------------------------------------
 # HTML templates
@@ -180,6 +192,48 @@ def _render_2fa_template(code: str, yacht_name: str) -> str:
         </td></tr>
         <tr><td style="color:#64748b;font-size:12px;border-top:1px solid rgba(148,163,184,0.1);padding-top:16px;">
           If you did not request this code, please ignore this email.
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""
+
+
+def _render_welcome_template(yacht_name: str, portal_url: str) -> str:
+    return f"""\
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:40px 0;">
+    <tr><td align="center">
+      <table width="480" cellpadding="0" cellspacing="0" style="background:#1e293b;border-radius:12px;padding:40px;border:1px solid rgba(148,163,184,0.15);">
+        <tr><td style="color:#e2e8f0;font-size:24px;font-weight:700;padding-bottom:8px;">CelesteOS</td></tr>
+        <tr><td style="color:#94a3b8;font-size:14px;padding-bottom:32px;">Yacht Management System</td></tr>
+        <tr><td style="color:#e2e8f0;font-size:16px;padding-bottom:16px;">
+          Welcome aboard, <strong style="color:#60a5fa;">{yacht_name}</strong>.
+        </td></tr>
+        <tr><td style="color:#94a3b8;font-size:14px;padding-bottom:24px;line-height:1.6;">
+          Your CelesteOS installation is ready. Click the button below to download
+          and install the system on your vessel's computer. You'll be asked to verify
+          your email with a one-time code during the process.
+        </td></tr>
+        <tr><td align="center" style="padding-bottom:32px;">
+          <a href="{portal_url}" style="display:inline-block;background:#3b82f6;color:#ffffff;font-size:16px;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;letter-spacing:0.5px;">
+            Download CelesteOS
+          </a>
+        </td></tr>
+        <tr><td style="color:#94a3b8;font-size:13px;padding-bottom:16px;line-height:1.5;">
+          <strong>What happens next:</strong><br/>
+          1. Click the button above to open the download portal<br/>
+          2. Enter your email address to receive a verification code<br/>
+          3. Enter the code to start the download<br/>
+          4. Open the installer and follow the on-screen steps
+        </td></tr>
+        <tr><td style="color:#64748b;font-size:12px;border-top:1px solid rgba(148,163,184,0.1);padding-top:16px;">
+          This link is unique to {yacht_name}. Do not forward this email.<br/>
+          If you have questions, reply to this email or contact support@celeste7.ai
         </td></tr>
       </table>
     </td></tr>

@@ -389,20 +389,12 @@ async def verify_download_code(req: VerifyDownloadCodeRequest):
 
     await _validate_2fa(yacht["yacht_id"], req.code, purpose="download")
 
-    # Determine installer type and build correct storage path
-    installer_type = yacht.get("installer_type", "dmg")
-    if installer_type == "exe":
-        package_path = f"exe/{yacht['yacht_id']}/CelesteOS-Setup-{yacht['yacht_id']}.exe"
-        platform = "windows"
-    else:
-        package_path = f"dmg/{yacht['yacht_id']}/CelesteOS-{yacht['yacht_id']}.dmg"
-        platform = "macos"
-
     # Generate a time-limited download token and store in download_links
     download_token = secrets.token_hex(32)
     # Edge Function looks up by token_hash = SHA-256(raw_token)
     token_hash = hashlib.sha256(download_token.encode("utf-8")).hexdigest()
     twofa_code = secrets.token_hex(8)  # internal ref, not user-facing
+    dmg_path = yacht.get("dmg_storage_path") or f"dmg/{yacht['yacht_id']}/CelesteOS-{yacht['yacht_id']}.dmg"
     expires = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
 
     async with httpx.AsyncClient() as client:
@@ -413,8 +405,7 @@ async def verify_download_code(req: VerifyDownloadCodeRequest):
                 "download_token": download_token,
                 "token_hash": token_hash,
                 "twofa_code": twofa_code,
-                "package_path": package_path,
-                "platform": platform,
+                "package_path": dmg_path,
                 "is_activation_link": False,
                 "expires_at": expires,
                 "download_count": 0,
@@ -429,7 +420,7 @@ async def verify_download_code(req: VerifyDownloadCodeRequest):
     # Generate a signed Storage URL (1 hour expiry) — browser can download directly
     async with httpx.AsyncClient() as client:
         sign_resp = await client.post(
-            f"{MASTER_SUPABASE_URL}/storage/v1/object/sign/installers/{package_path}",
+            f"{MASTER_SUPABASE_URL}/storage/v1/object/sign/installers/{dmg_path}",
             json={"expiresIn": 3600},
             headers=_sb_headers(),
             timeout=15,
@@ -446,14 +437,67 @@ async def verify_download_code(req: VerifyDownloadCodeRequest):
 
     yacht_name = yacht.get("yacht_name", yacht["yacht_id"])
 
-    logger.info("Download token generated for yacht %s (platform=%s)", yacht["yacht_id"], platform)
+    logger.info("Download token generated for yacht %s", yacht["yacht_id"])
 
     return {
         "success": True,
         "download_url": download_url,
         "yacht_name": yacht_name,
-        "platform": platform,
     }
+
+
+# ---------------------------------------------------------------------------
+# Welcome email (admin-triggered)
+# ---------------------------------------------------------------------------
+
+PORTAL_BASE_URL = os.getenv("PORTAL_BASE_URL", "https://registration.celeste7.ai")
+
+
+class SendWelcomeRequest(BaseModel):
+    yacht_id: str
+    admin_key: Optional[str] = None  # simple guard — not a full auth system
+
+
+ADMIN_KEY = os.getenv("ADMIN_API_KEY", "")
+
+
+@app.post("/api/send-welcome")
+async def send_welcome(req: SendWelcomeRequest, request: Request):
+    """Send the welcome email with download portal link to the buyer."""
+    # Simple admin guard
+    if ADMIN_KEY and req.admin_key != ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    # Look up yacht
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            _sb_url(f"fleet_registry?yacht_id=eq.{req.yacht_id}&select=yacht_name,buyer_email,active"),
+            headers=_sb_headers(),
+        )
+    if resp.status_code != 200 or not resp.json():
+        raise HTTPException(status_code=404, detail="Yacht not found")
+
+    yacht = resp.json()[0]
+    if not yacht.get("active"):
+        raise HTTPException(status_code=400, detail="Yacht is not active")
+    if not yacht.get("buyer_email"):
+        raise HTTPException(status_code=400, detail="No buyer email on record")
+
+    buyer_email = yacht["buyer_email"]
+    yacht_name = yacht["yacht_name"]
+
+    # Build portal URL with pre-filled email
+    import urllib.parse
+    portal_url = f"{PORTAL_BASE_URL}?email={urllib.parse.quote(buyer_email)}"
+
+    email_svc = _get_email()
+    sent = email_svc.send_welcome_email(buyer_email, yacht_name, portal_url)
+
+    if not sent:
+        raise HTTPException(status_code=500, detail="Failed to send welcome email")
+
+    logger.info("Welcome email sent for %s to %s", req.yacht_id, _mask_email(buyer_email))
+    return {"success": True, "sent_to": _mask_email(buyer_email)}
 
 
 # ---------------------------------------------------------------------------
