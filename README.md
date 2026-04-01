@@ -1,111 +1,211 @@
-# CelesteOS Registration API (Windows-Compatible)
+# CelesteOS Registration & Onboarding Service
 
-Backend service handling the complete yacht onboarding flow — from download portal to software activation. Supports both macOS and Windows agents.
+Backend API for the complete yacht onboarding pipeline — from admin SQL insert to running agent on the customer's machine.
 
-## What This Does
-
-This service handles:
-
-1. **Yacht Registration** — Installer contacts this service on first launch, triggering a 2FA verification email
-2. **2FA Verification** — Validates the 6-digit code, returns a cryptographic secret for ongoing authentication
-3. **Download Portal** — Web page where buyers enter their email, verify with a code, and download the installer
-4. **Health Monitoring** — Simple health check endpoint
-
-## Architecture
+## The Full Onboarding Flow
 
 ```
-Buyer visits download.celeste7.ai
-  → Enters email
-  → Receives 6-digit code (via Microsoft Graph API)
-  → Enters code
-  → Downloads installer (DMG for macOS, EXE for Windows)
+ADMIN                          SYSTEM                         CUSTOMER
+─────                          ──────                         ────────
+1. SQL insert into             2. Build DMG via PyInstaller   5. Receives welcome email
+   fleet_registry                 (bakes in service keys)        from contact@celeste7.ai
+   (scripts/onboard_yacht.sql)
+                               3. Upload DMG to Supabase      6. Clicks "Access Download Portal"
+                                  Storage: installers/dmg/        → registration.celeste7.ai
+                                  {yacht_id}/CelesteOS-
+                                  {yacht_id}.dmg               7. Enters email → receives 2FA code
 
-Buyer installs and launches CelesteOS
-  → App calls POST /api/register
-  → Buyer receives 6-digit code by email
-  → Enters code in app
-  → App calls POST /api/verify-2fa → receives shared_secret
-  → Secret stored in platform credential store (Keychain on macOS, Credential Manager on Windows)
-  → App is now activated
+                               4. POST /api/send-welcome       8. Enters code → DMG download starts
+                                  (triggers welcome email)
+                                                               9. Opens DMG → installer wizard
+                                                                  → enters 2FA → activates
+
+                                                              10. Agent runs (tray icon, sync daemon)
 ```
 
 ## Endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/api/register` | Register yacht, send 2FA code to buyer email |
-| POST | `/api/verify-2fa` | Verify code, return shared_secret (one-time) |
-| POST | `/api/request-download-code` | Send download verification code |
-| POST | `/api/verify-download-code` | Verify download code, return download URL |
+| POST | `/api/send-welcome` | Send welcome email with download portal link (admin) |
+| POST | `/api/request-download-code` | Send 6-digit download verification code to buyer |
+| POST | `/api/verify-download-code` | Verify code → return signed DMG download URL |
+| POST | `/api/register` | Yacht registration from installer (triggers 2FA email) |
+| POST | `/api/verify-2fa` | Verify installer 2FA → return shared_secret (one-time) |
 | GET | `/api/health` | Health check |
-| GET | `/` | Download portal (static HTML) |
+| GET | `/` | Download portal (fallback static HTML) |
 
-## Platform Support
+## Email Templates
 
-All endpoints are **fully cross-platform**. The registration service makes zero assumptions about the client's operating system. Both macOS and Windows agents call the same API identically.
+Three branded HTML emails sent from `contact@celeste7.ai` via Microsoft Graph API:
 
-The only platform difference is in the download portal, which serves different installer files based on the yacht's configuration:
-- macOS: `.dmg` (disk image, drag to Applications)
-- Windows: `.exe` (Inno Setup installer)
+| Email | Trigger | Content |
+|-------|---------|---------|
+| **Welcome** | `POST /api/send-welcome` | "Installation ready" + "Access Download Portal" button linking to registration.celeste7.ai |
+| **Download code** | `POST /api/request-download-code` | 6-digit code for download portal verification |
+| **Installer 2FA** | `POST /api/register` | 6-digit code for installer activation |
 
-The installer type is determined by `fleet_registry.installer_type` (`dmg` or `exe`). The correct storage path is built automatically:
-- macOS: `dmg/{yacht_id}/CelesteOS-{yacht_id}.dmg`
-- Windows: `exe/{yacht_id}/CelesteOS-Setup-{yacht_id}.exe`
+Templates are in `services/email.py`. Brand tokens: background `#0c0b0a`, card `#181614`, teal accent `#3A7C9D`, text `#eae6e1`.
 
-The download portal also detects the user's OS via `navigator.userAgent` and shows platform-appropriate instructions.
+## Project Structure
+
+```
+services/
+  registration.py    — FastAPI app, all endpoints, Supabase REST calls
+  email.py           — GraphEmailService + 3 branded HTML email templates
+  __init__.py
+
+portal/
+  download.html      — Fallback download portal (served at /)
+  favicon.png
+
+scripts/
+  onboard_yacht.sql  — SQL template for inserting a new yacht into fleet_registry
+
+supabase/
+  functions/
+    download/
+      index.ts       — Edge Function for signed download URLs (fallback path)
+  migrations/
+    001_complete_schema.sql
+    007_download_token_system.sql
+    008_installation_tracking.sql
+    009_installation_2fa_codes.sql
+    010_tenant_credentials.sql
+    011_yacht_id_uuid_format.sql
+
+.env.example         — Environment variable template
+Dockerfile           — Python 3.11, port 8001
+docker-compose.yml   — Local dev with health check
+```
+
+## Database (Master Supabase)
+
+All tables live in the **master** Supabase project (`qvzmkaamzaqxpzbewjxe`), NOT the tenant.
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `fleet_registry` | One row per yacht | yacht_id, yacht_name, buyer_email, active, shared_secret, tenant_supabase_url, installer_type |
+| `installation_2fa_codes` | Hashed 2FA codes with expiry | code_hash (SHA-256), yacht_id, email_sent_to, purpose (installation\|download), expires_at, verified, attempts, max_attempts |
+| `download_links` | Time-limited download tokens | token_hash (SHA-256), yacht_id, package_path, platform, expires_at, download_count |
+| `audit_log` | All registration actions | yacht_id, action, details (JSONB), ip_address |
+
+## Security
+
+- 2FA codes: SHA-256 hashed before storage, constant-time comparison, 10-min expiry, max 5 attempts
+- Download tokens: 256-bit random, hashed for storage, 24-hour expiry
+- Service keys: baked into DMG at build time — never sent over the wire, never stored in fleet_registry
+- Recovery key: AES-encrypted at rest using hardware UUID (on the customer's machine)
+- CORS: restricted to registration.celeste7.ai, download.celeste7.ai, localhost
+- Email: doesn't reveal whether an email exists in fleet_registry (always returns success)
+
+## Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `MASTER_SUPABASE_URL` | Yes | — | Master Supabase project URL |
+| `MASTER_SUPABASE_SERVICE_KEY` | Yes | — | Supabase service role JWT |
+| `AZURE_TENANT_ID` | No* | — | Azure AD tenant ID |
+| `AZURE_CLIENT_ID` | No* | — | Azure app registration client ID (Write app) |
+| `AZURE_CLIENT_SECRET` | No* | — | Azure app client secret |
+| `AZURE_SENDER_EMAIL` | No* | `noreply@celeste7.ai` | Sender email (must be a real mailbox in Azure) |
+| `PORTAL_BASE_URL` | No | `https://registration.celeste7.ai` | Download portal URL for welcome email links |
+| `ADMIN_API_KEY` | No | — | Simple guard for /api/send-welcome (if set, must match request) |
+| `PORT` | No | `8001` | Server port |
+
+*Without Azure credentials, the service runs in **debug mode** — codes are logged to console instead of emailed. All other functionality works identically.
 
 ## Running Locally
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Set environment variables (copy .env.example to .env)
 cp .env.example .env
-# Edit .env with your credentials
+# Edit .env with credentials
 
-# Start the service
+# Option A: Direct
+pip install -r requirements.txt
 python -m uvicorn services.registration:app --host 0.0.0.0 --port 8001
 
-# Or via Docker
+# Option B: Docker
 docker compose up --build
 ```
 
-## Environment Variables
+## Deployment
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `MASTER_SUPABASE_URL` | Yes | Master Supabase project URL |
-| `MASTER_SUPABASE_SERVICE_KEY` | Yes | Supabase service role JWT |
-| `AZURE_TENANT_ID` | No* | Microsoft Azure AD tenant ID |
-| `AZURE_CLIENT_ID` | No* | Azure app registration client ID |
-| `AZURE_CLIENT_SECRET` | No* | Azure app client secret |
-| `AZURE_SENDER_EMAIL` | No* | Email address to send from (must be a real mailbox) |
+**Production:** Render free tier (Docker)
+- Service: `celesteos-registration-windows` on Render
+- URL: `https://celesteos-registration-windows.onrender.com`
+- Auto-deploys on push to main
+- Health check: `/api/health`
 
-*When Azure credentials are not set, the service runs in **debug mode** — verification codes are logged to the console instead of sent by email. All other functionality works identically.
+**Download portal frontend:** Vercel
+- Repo: `celesteos-portal` (React + Vite)
+- URL: `https://registration.celeste7.ai`
+- Env: `VITE_API_URL=https://celesteos-registration-windows.onrender.com`
 
-## Database
+**Email sender:** Microsoft 365 via Graph API
+- Sender: `contact@celeste7.ai`
+- Azure app: CelesteOS.Outlook.Write (`f0b8944b-8127-4f0f-8ed5-5487462df50c`)
+- Tenant: `073af86c-74f3-422b-ad5c-a35d41fce4be`
 
-Uses the **master** Supabase instance (`qvzmkaamzaqxpzbewjxe`). Required tables:
+## Onboarding Runbook (Step by Step)
 
-- `fleet_registry` — Yacht records with buyer email, activation state, `installer_type` (`dmg`/`exe`)
-- `installation_2fa_codes` — Hashed verification codes with expiry and attempt tracking
-- `download_links` — Time-limited download tokens with `platform` and `package_path`
+### 1. Create the yacht record
+```sql
+-- Run in Supabase SQL Editor (master project)
+-- Edit the marked values, then execute
+-- See: scripts/onboard_yacht.sql
+```
 
-Migrations are in `supabase/migrations/`. The `installation_2fa_codes` table is separate from the user-account `twofa_codes` table (different schema, different purpose).
+### 2. Build the DMG
+```bash
+# In the celesteos-agent repo
+SUPABASE_SERVICE_KEY=<master-key> \
+TENANT_SUPABASE_SERVICE_KEY=<this-yacht's-tenant-key> \
+python build_dmg.py <yacht_id>
+# Output: CelesteOS-<yacht_id>.dmg (32-37MB)
+# Automatically uploads to Supabase Storage: installers/dmg/<yacht_id>/
+```
 
-## Security
+### 3. Send the welcome email
+```bash
+curl -X POST https://celesteos-registration-windows.onrender.com/api/send-welcome \
+  -H "Content-Type: application/json" \
+  -d '{"yacht_id": "<yacht_id>"}'
+```
+Customer receives branded email with "Access Download Portal" button.
 
-- 2FA codes are SHA-256 hashed before storage
-- Code comparison uses constant-time comparison (prevents timing attacks)
-- Codes expire after 10 minutes
-- Maximum 5 attempts per code before lockout
-- CORS restricted to specific portal domains
-- Download tokens are hashed for Edge Function compatibility
-- Shared secrets are 256-bit cryptographically random
+### 4. Customer self-service
+Customer clicks portal link → enters email → receives 2FA code → enters code → DMG downloads → installs → activates. No admin action needed.
+
+### 5. Verify activation
+```sql
+SELECT yacht_id, yacht_name, active, shared_secret IS NOT NULL as activated
+FROM fleet_registry
+WHERE yacht_id = '<yacht_id>';
+-- active=true + activated=true means the customer completed installation
+```
 
 ## Related Repos
 
-- [`Celesteos-agent-windows`](https://github.com/shortalex12333/Celesteos-agent-windows) — Cross-platform agent (macOS + Windows) that runs on the yacht
-- [`celesteos-agent`](https://github.com/shortalex12333/celesteos-agent) — Original macOS-only agent
-- `Cloud_PMS` — The main yacht management system (search, lenses, actions)
+| Repo | Purpose |
+|------|---------|
+| [`celesteos-agent`](https://github.com/shortalex12333/celesteos-agent) | macOS agent — installer GUI, sync daemon, tray icon |
+| [`Celesteos-agent-windows`](https://github.com/shortalex12333/Celesteos-agent-windows) | Windows agent — EXE installer via GitHub Actions |
+| [`celesteos-portal`](https://github.com/shortalex12333/celesteos-portal) | Download portal frontend (Vercel → registration.celeste7.ai) |
+| [`Cloud_PMS`](https://github.com/shortalex12333/Cloud_PMS) | Main yacht management system (search, lenses, actions) |
+
+## Supabase Storage Layout
+
+```
+installers/
+  dmg/
+    MY_FREEDOM/
+      CelesteOS-MY_FREEDOM.dmg              (38.9 MB)
+    TEST_YACHT_004/
+      CelesteOS-TEST_YACHT_004.dmg          (33.2 MB)
+    TEST_YACHT_006/
+      CelesteOS-TEST_YACHT_006.dmg          (33.2 MB)
+  exe/
+    73b36cab-.../
+      CelesteOS-Setup-73b36cab-...exe       (Windows)
+```
