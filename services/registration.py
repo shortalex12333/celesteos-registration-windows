@@ -406,6 +406,7 @@ async def verify_download_code(req: VerifyDownloadCodeRequest):
                 "token_hash": token_hash,
                 "twofa_code": twofa_code,
                 "package_path": dmg_path,
+                "platform": yacht.get("installer_type", "dmg"),
                 "is_activation_link": False,
                 "expires_at": expires,
                 "download_count": 0,
@@ -430,10 +431,8 @@ async def verify_download_code(req: VerifyDownloadCodeRequest):
             download_url = f"{MASTER_SUPABASE_URL}/storage/v1{signed_path}"
         else:
             logger.error("Failed to sign URL: %d %s", sign_resp.status_code, sign_resp.text)
-            raise HTTPException(500, {
-                "success": False,
-                "error": "Installer file not found in storage. It may not have been built yet. Contact support.",
-            })
+            # Fallback to Edge Function
+            download_url = f"{MASTER_SUPABASE_URL}/functions/v1/download?token={download_token}"
 
     yacht_name = yacht.get("yacht_name", yacht["yacht_id"])
 
