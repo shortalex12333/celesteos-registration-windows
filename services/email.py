@@ -24,6 +24,7 @@ AZURE_TENANT_ID = os.getenv("AZURE_TENANT_ID", "")
 AZURE_CLIENT_ID = os.getenv("AZURE_CLIENT_ID", "")
 AZURE_CLIENT_SECRET = os.getenv("AZURE_CLIENT_SECRET", "")
 AZURE_SENDER_EMAIL = os.getenv("AZURE_SENDER_EMAIL", "noreply@celeste7.ai")
+LOGO_URL = os.getenv("CELESTEOS_LOGO_URL", "https://celeste7.ai/favicon.png")
 
 
 class GraphEmailService:
@@ -158,7 +159,7 @@ class GraphEmailService:
             print(f"  To: {to}")
             print(f"  Portal: {portal_url}")
             print(f"{'='*50}\n", flush=True)
-        subject = f"Welcome to CelesteOS — {yacht_name}"
+        subject = f"CelesteOS — Installation ready — {yacht_name}"
         html = _render_welcome_template(yacht_name, portal_url)
         return self.send_email(to, subject, html)
 
@@ -172,26 +173,29 @@ def _render_2fa_template(code: str, yacht_name: str) -> str:
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:40px 0;">
+<body style="margin:0;padding:0;background:#0c0b0a;font-family:-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0c0b0a;">
     <tr><td align="center">
-      <table width="480" cellpadding="0" cellspacing="0" style="background:#1e293b;border-radius:12px;padding:40px;border:1px solid rgba(148,163,184,0.15);">
-        <tr><td style="color:#e2e8f0;font-size:24px;font-weight:700;padding-bottom:8px;">CelesteOS</td></tr>
-        <tr><td style="color:#94a3b8;font-size:14px;padding-bottom:32px;">Yacht Management System</td></tr>
-        <tr><td style="color:#e2e8f0;font-size:16px;padding-bottom:24px;">
-          Your verification code for <strong style="color:#60a5fa;">{yacht_name}</strong>:
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#0c0b0a;text-align:center;">
+        <tr><td style="height:60px;"></td></tr>
+        <tr><td style="padding:0 48px 48px 48px;">
+          <img src="{LOGO_URL}" alt="CelesteOS" width="32" height="32" style="border:0;" />
         </td></tr>
-        <tr><td align="center" style="padding-bottom:24px;">
-          <div style="display:inline-block;background:#0f172a;border:2px solid #3b82f6;border-radius:8px;padding:16px 32px;font-size:32px;letter-spacing:8px;color:#60a5fa;font-weight:700;">
-            {code}
-          </div>
+        <tr><td style="padding:0 48px 12px 48px;color:#5AABCC;font-size:13px;font-weight:500;letter-spacing:0.5px;">{yacht_name}</td></tr>
+        <tr><td style="padding:0 48px 48px 48px;color:#eae6e1;font-size:15px;">Verification code</td></tr>
+        <tr><td style="padding:0 48px 16px 48px;">
+          <table align="center" cellpadding="0" cellspacing="0" style="background:#161412;border-radius:8px;">
+            <tr><td style="padding:24px 40px;font-size:36px;letter-spacing:12px;color:#eae6e1;font-weight:600;font-family:'SF Mono',ui-monospace,'Fira Code',monospace;text-align:center;">
+              {code}
+            </td></tr>
+          </table>
         </td></tr>
-        <tr><td style="color:#94a3b8;font-size:14px;padding-bottom:16px;">
-          Enter this code in the CelesteOS installer to complete activation.
-          This code expires in <strong>10 minutes</strong>.
-        </td></tr>
-        <tr><td style="color:#64748b;font-size:12px;border-top:1px solid rgba(148,163,184,0.1);padding-top:16px;">
-          If you did not request this code, please ignore this email.
+        <tr><td style="padding:0 48px;color:#6e6860;font-size:13px;">Expires in 10 minutes</td></tr>
+        <tr><td style="height:64px;"></td></tr>
+        <tr><td style="padding:0 48px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="height:1px;background:#1e1b18;"></td></tr></table></td></tr>
+        <tr><td style="padding:24px 48px 60px 48px;color:#3d3832;font-size:12px;line-height:1.6;">
+          Enter this code in the CelesteOS installer to complete activation.<br/>
+          Code not requested by you — disregard this email.
         </td></tr>
       </table>
     </td></tr>
@@ -205,35 +209,36 @@ def _render_welcome_template(yacht_name: str, portal_url: str) -> str:
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:40px 0;">
+<body style="margin:0;padding:0;background:#0c0b0a;font-family:-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0c0b0a;">
     <tr><td align="center">
-      <table width="480" cellpadding="0" cellspacing="0" style="background:#1e293b;border-radius:12px;padding:40px;border:1px solid rgba(148,163,184,0.15);">
-        <tr><td style="color:#e2e8f0;font-size:24px;font-weight:700;padding-bottom:8px;">CelesteOS</td></tr>
-        <tr><td style="color:#94a3b8;font-size:14px;padding-bottom:32px;">Yacht Management System</td></tr>
-        <tr><td style="color:#e2e8f0;font-size:16px;padding-bottom:16px;">
-          Welcome aboard, <strong style="color:#60a5fa;">{yacht_name}</strong>.
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#0c0b0a;text-align:center;">
+        <tr><td style="height:60px;"></td></tr>
+        <tr><td style="padding:0 48px 48px 48px;">
+          <img src="{LOGO_URL}" alt="CelesteOS" width="32" height="32" style="border:0;" />
         </td></tr>
-        <tr><td style="color:#94a3b8;font-size:14px;padding-bottom:24px;line-height:1.6;">
-          Your CelesteOS installation is ready. Click the button below to download
-          and install the system on your vessel's computer. You'll be asked to verify
-          your email with a one-time code during the process.
+        <tr><td style="padding:0 48px 12px 48px;color:#5AABCC;font-size:13px;font-weight:500;letter-spacing:0.5px;">{yacht_name}</td></tr>
+        <tr><td style="padding:0 48px 16px 48px;color:#eae6e1;font-size:15px;">Installation ready.</td></tr>
+        <tr><td style="padding:0 48px 40px 48px;color:#6e6860;font-size:14px;line-height:1.7;">
+          The CelesteOS installer is available for download.<br/>
+          Email verification is required during the process.
         </td></tr>
-        <tr><td align="center" style="padding-bottom:32px;">
-          <a href="{portal_url}" style="display:inline-block;background:#3b82f6;color:#ffffff;font-size:16px;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;letter-spacing:0.5px;">
-            Download CelesteOS
+        <tr><td style="padding:0 48px 48px 48px;">
+          <a href="{portal_url}" style="display:inline-block;background:#3A7C9D;color:#ffffff;font-size:14px;font-weight:500;padding:14px 28px;border-radius:8px;text-decoration:none;">
+            Access Download Portal
           </a>
         </td></tr>
-        <tr><td style="color:#94a3b8;font-size:13px;padding-bottom:16px;line-height:1.5;">
-          <strong>What happens next:</strong><br/>
-          1. Click the button above to open the download portal<br/>
-          2. Enter your email address to receive a verification code<br/>
-          3. Enter the code to start the download<br/>
-          4. Open the installer and follow the on-screen steps
+        <tr><td style="padding:0 48px 0 48px;color:#3d3832;font-size:13px;line-height:2;">
+          1. Open the download portal<br/>
+          2. Verify your email with a one-time code<br/>
+          3. Download the installer<br/>
+          4. Run the installer and follow on-screen steps
         </td></tr>
-        <tr><td style="color:#64748b;font-size:12px;border-top:1px solid rgba(148,163,184,0.1);padding-top:16px;">
+        <tr><td style="height:64px;"></td></tr>
+        <tr><td style="padding:0 48px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="height:1px;background:#1e1b18;"></td></tr></table></td></tr>
+        <tr><td style="padding:24px 48px 60px 48px;color:#3d3832;font-size:12px;line-height:1.6;">
           This link is unique to {yacht_name}. Do not forward this email.<br/>
-          If you have questions, reply to this email or contact support@celeste7.ai
+          Contact: support@celeste7.ai
         </td></tr>
       </table>
     </td></tr>
@@ -247,26 +252,29 @@ def _render_download_code_template(code: str, yacht_name: str) -> str:
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:40px 0;">
+<body style="margin:0;padding:0;background:#0c0b0a;font-family:-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0c0b0a;">
     <tr><td align="center">
-      <table width="480" cellpadding="0" cellspacing="0" style="background:#1e293b;border-radius:12px;padding:40px;border:1px solid rgba(148,163,184,0.15);">
-        <tr><td style="color:#e2e8f0;font-size:24px;font-weight:700;padding-bottom:8px;">CelesteOS</td></tr>
-        <tr><td style="color:#94a3b8;font-size:14px;padding-bottom:32px;">Download Portal</td></tr>
-        <tr><td style="color:#e2e8f0;font-size:16px;padding-bottom:24px;">
-          Your download verification code for <strong style="color:#60a5fa;">{yacht_name}</strong>:
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#0c0b0a;text-align:center;">
+        <tr><td style="height:60px;"></td></tr>
+        <tr><td style="padding:0 48px 48px 48px;">
+          <img src="{LOGO_URL}" alt="CelesteOS" width="32" height="32" style="border:0;" />
         </td></tr>
-        <tr><td align="center" style="padding-bottom:24px;">
-          <div style="display:inline-block;background:#0f172a;border:2px solid #3b82f6;border-radius:8px;padding:16px 32px;font-size:32px;letter-spacing:8px;color:#60a5fa;font-weight:700;">
-            {code}
-          </div>
+        <tr><td style="padding:0 48px 12px 48px;color:#5AABCC;font-size:13px;font-weight:500;letter-spacing:0.5px;">{yacht_name}</td></tr>
+        <tr><td style="padding:0 48px 48px 48px;color:#eae6e1;font-size:15px;">Download verification code</td></tr>
+        <tr><td style="padding:0 48px 16px 48px;">
+          <table align="center" cellpadding="0" cellspacing="0" style="background:#161412;border-radius:8px;">
+            <tr><td style="padding:24px 40px;font-size:36px;letter-spacing:12px;color:#eae6e1;font-weight:600;font-family:'SF Mono',ui-monospace,'Fira Code',monospace;text-align:center;">
+              {code}
+            </td></tr>
+          </table>
         </td></tr>
-        <tr><td style="color:#94a3b8;font-size:14px;padding-bottom:16px;">
-          Enter this code on the download page to access your CelesteOS installer.
-          This code expires in <strong>10 minutes</strong>.
-        </td></tr>
-        <tr><td style="color:#64748b;font-size:12px;border-top:1px solid rgba(148,163,184,0.1);padding-top:16px;">
-          If you did not request this code, please ignore this email.
+        <tr><td style="padding:0 48px;color:#6e6860;font-size:13px;">Expires in 10 minutes</td></tr>
+        <tr><td style="height:64px;"></td></tr>
+        <tr><td style="padding:0 48px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="height:1px;background:#1e1b18;"></td></tr></table></td></tr>
+        <tr><td style="padding:24px 48px 60px 48px;color:#3d3832;font-size:12px;line-height:1.6;">
+          Enter this code on the download portal to access the installer.<br/>
+          Code not requested by you — disregard this email.
         </td></tr>
       </table>
     </td></tr>

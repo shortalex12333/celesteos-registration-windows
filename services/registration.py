@@ -519,3 +519,6 @@ if PORTAL_DIR.is_dir():
         if index_page.exists():
             return HTMLResponse(index_page.read_text())
         return HTMLResponse("<h1>CelesteOS Portal</h1>")
+
+    # Serve static assets (favicon, images) from portal directory
+    app.mount("/", StaticFiles(directory=str(PORTAL_DIR)), name="portal-static")
