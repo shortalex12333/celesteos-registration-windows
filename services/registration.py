@@ -17,6 +17,7 @@ import logging
 import os
 import secrets
 import time
+import jwt
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
@@ -38,6 +39,10 @@ MASTER_SUPABASE_URL = os.getenv(
     "MASTER_SUPABASE_URL", "https://qvzmkaamzaqxpzbewjxe.supabase.co"
 )
 MASTER_SUPABASE_KEY = os.getenv("MASTER_SUPABASE_SERVICE_KEY", "")
+
+# Import pipeline token signing (separate from Supabase auth)
+IMPORT_JWT_SECRET = os.getenv("IMPORT_JWT_SECRET", "")
+IMPORT_TOKEN_EXPIRY_HOURS = 4
 
 TWOFA_EXPIRY_MINUTES = 10
 TWOFA_MAX_ATTEMPTS = 5
@@ -436,12 +441,31 @@ async def verify_download_code(req: VerifyDownloadCodeRequest):
 
     yacht_name = yacht.get("yacht_name", yacht["yacht_id"])
 
+    # Generate import pipeline token (separate from Supabase auth)
+    import_token = None
+    if IMPORT_JWT_SECRET:
+        import_token = jwt.encode(
+            {
+                "sub": req.email,
+                "yacht_id": yacht["yacht_id"],
+                "yacht_name": yacht_name,
+                "scope": "import",
+                "aud": "celeste-import",
+                "iat": datetime.now(timezone.utc),
+                "exp": datetime.now(timezone.utc) + timedelta(hours=IMPORT_TOKEN_EXPIRY_HOURS),
+            },
+            IMPORT_JWT_SECRET,
+            algorithm="HS256",
+        )
+
     logger.info("Download token generated for yacht %s", yacht["yacht_id"])
 
     return {
         "success": True,
         "download_url": download_url,
         "yacht_name": yacht_name,
+        "yacht_id": yacht["yacht_id"],
+        "import_token": import_token,
     }
 
 
