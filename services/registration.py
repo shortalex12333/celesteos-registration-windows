@@ -522,20 +522,28 @@ async def invite_users(req: InviteUsersRequest, request: Request):
     if len(req.invitees) > 20:
         raise HTTPException(status_code=400, detail={"success": False, "error": "Max 20 invites per request"})
 
+    # Look up fleet_id from DB — don't rely on JWT payload which may be stale
+    yacht_row = await _get_yacht(yacht_id)
+    fleet_id = str(yacht_row["fleet_id"]) if yacht_row and yacht_row.get("fleet_id") else None
+
     results = []
     async with httpx.AsyncClient() as client:
         for invitee in req.invitees:
             try:
+                user_metadata = {
+                    "name": invitee.name,
+                    "rank": invitee.rank,
+                    "yacht_id": yacht_id,
+                    "yacht_name": yacht_name,
+                }
+                if fleet_id:
+                    user_metadata["fleet_id"] = fleet_id
+
                 resp = await client.post(
                     f"{MASTER_SUPABASE_URL}/auth/v1/invite",
                     json={
                         "email": invitee.email,
-                        "data": {
-                            "name": invitee.name,
-                            "rank": invitee.rank,
-                            "yacht_id": yacht_id,
-                            "yacht_name": yacht_name,
-                        },
+                        "data": user_metadata,
                     },
                     headers={
                         "apikey": MASTER_SUPABASE_KEY,
