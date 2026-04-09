@@ -546,6 +546,7 @@ async def invite_users(req: InviteUsersRequest, request: Request):
     yacht_row = await _get_yacht(yacht_id)
     fleet_id = str(yacht_row["fleet_id"]) if yacht_row and yacht_row.get("fleet_id") else None
 
+    email_svc = _get_email()
     results = []
     async with httpx.AsyncClient() as client:
         for invitee in req.invitees:
@@ -559,9 +560,11 @@ async def invite_users(req: InviteUsersRequest, request: Request):
                 if fleet_id:
                     user_metadata["fleet_id"] = fleet_id
 
-                resp = await client.post(
-                    f"{MASTER_SUPABASE_URL}/auth/v1/invite",
+                # Generate magic link via Supabase admin — does not send email
+                link_resp = await client.post(
+                    f"{MASTER_SUPABASE_URL}/auth/v1/admin/generate_link",
                     json={
+                        "type": "signup",
                         "email": invitee.email,
                         "data": user_metadata,
                     },
@@ -572,13 +575,33 @@ async def invite_users(req: InviteUsersRequest, request: Request):
                     },
                     timeout=15,
                 )
-                if resp.status_code in (200, 201):
+
+                if link_resp.status_code not in (200, 201):
+                    body = link_resp.json()
+                    err = body.get("msg") or body.get("message") or f"HTTP {link_resp.status_code}"
+                    results.append({"email": invitee.email, "success": False, "error": err})
+                    continue
+
+                action_link = link_resp.json().get("action_link") or link_resp.json().get("properties", {}).get("action_link")
+                if not action_link:
+                    results.append({"email": invitee.email, "success": False, "error": "No action_link in response"})
+                    continue
+
+                # Send branded invite email with the Supabase-generated magic link
+                sent_ok = email_svc.send_invite_email(
+                    to=invitee.email,
+                    name=invitee.name,
+                    rank=invitee.rank,
+                    yacht_name=yacht_name,
+                    setup_url=action_link,
+                )
+                if sent_ok:
                     results.append({"email": invitee.email, "success": True})
                 else:
-                    body = resp.json()
-                    err = body.get("msg") or body.get("message") or f"HTTP {resp.status_code}"
-                    results.append({"email": invitee.email, "success": False, "error": err})
-            except Exception:
+                    results.append({"email": invitee.email, "success": False, "error": "Email delivery failed"})
+
+            except Exception as e:
+                logger.exception("Invite failed for %s", invitee.email)
                 results.append({"email": invitee.email, "success": False, "error": "Request failed"})
 
     sent = sum(1 for r in results if r["success"])
