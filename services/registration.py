@@ -582,10 +582,41 @@ async def invite_users(req: InviteUsersRequest, request: Request):
                     results.append({"email": invitee.email, "success": False, "error": err})
                     continue
 
-                action_link = link_resp.json().get("action_link") or link_resp.json().get("properties", {}).get("action_link")
+                link_body = link_resp.json()
+                action_link = link_body.get("action_link") or link_body.get("properties", {}).get("action_link")
                 if not action_link:
                     results.append({"email": invitee.email, "success": False, "error": "No action_link in response"})
                     continue
+
+                # Write user_accounts to master — auth.py looks this up on every request.
+                # Must be written here so the user can authenticate the moment they
+                # click the magic link. status='active' so auth.py doesn't block them.
+                new_user_id = link_body.get("user", {}).get("id")
+                if new_user_id:
+                    try:
+                        await client.post(
+                            _sb_url("user_accounts"),
+                            json={
+                                "id": new_user_id,
+                                "yacht_id": yacht_id,
+                                "email": invitee.email,
+                                "display_name": invitee.name,
+                                "role": invitee.rank,
+                                "status": "active",
+                                "email_verified": False,
+                            },
+                            headers={
+                                "apikey": MASTER_SUPABASE_KEY,
+                                "Authorization": f"Bearer {MASTER_SUPABASE_KEY}",
+                                "Content-Type": "application/json",
+                                # Ignore conflicts — re-inviting an existing user is fine
+                                "Prefer": "return=minimal,resolution=ignore-duplicates",
+                            },
+                            timeout=10,
+                        )
+                        logger.info("Wrote user_accounts for invited user %s on yacht %s", new_user_id[:8], yacht_id)
+                    except Exception:
+                        logger.exception("Failed to write user_accounts for %s — invite email still sent", invitee.email)
 
                 # Send branded invite email with the Supabase-generated magic link
                 sent_ok = email_svc.send_invite_email(
