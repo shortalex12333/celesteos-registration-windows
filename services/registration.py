@@ -459,13 +459,33 @@ async def verify_download_code(req: VerifyDownloadCodeRequest):
             algorithm="HS256",
         )
 
-    logger.info("Download token generated for yacht %s", yacht["yacht_id"])
+    # If this yacht belongs to a fleet, return all sibling vessels
+    fleet_id = yacht.get("fleet_id")
+    fleet_vessels = []
+    if fleet_id:
+        async with httpx.AsyncClient() as client:
+            fleet_resp = await client.get(
+                _sb_url("fleet_registry"),
+                params={
+                    "fleet_id": f"eq.{fleet_id}",
+                    "active": "eq.true",
+                    "select": "yacht_id,yacht_name",
+                },
+                headers=_sb_headers(),
+                timeout=15,
+            )
+            if fleet_resp.status_code == 200:
+                fleet_vessels = fleet_resp.json()
+
+    logger.info("Download token generated for yacht %s (fleet: %s, %d vessels)", yacht["yacht_id"], fleet_id, len(fleet_vessels))
 
     return {
         "success": True,
         "download_url": download_url,
         "yacht_name": yacht_name,
         "yacht_id": yacht["yacht_id"],
+        "fleet_id": fleet_id,
+        "fleet_vessels": fleet_vessels,
         "import_token": import_token,
     }
 
