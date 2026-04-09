@@ -9,6 +9,7 @@ Endpoints:
     POST /api/verify-2fa          — Verify 2FA code → return shared_secret
     POST /api/request-download-code — Send download 2FA code to buyer email
     POST /api/verify-download-code  — Verify download code → return download URL
+    POST /api/invite-users        — Invite crew members (requires import_token JWT)
     GET  /api/health              — Health check
 """
 
@@ -466,6 +467,100 @@ async def verify_download_code(req: VerifyDownloadCodeRequest):
         "yacht_name": yacht_name,
         "yacht_id": yacht["yacht_id"],
         "import_token": import_token,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Crew invite
+# ---------------------------------------------------------------------------
+
+class InviteUserItem(BaseModel):
+    email: str
+    name: str
+    rank: str
+
+
+class InviteUsersRequest(BaseModel):
+    invitees: list[InviteUserItem]
+
+
+@app.post("/api/invite-users")
+async def invite_users(req: InviteUsersRequest, request: Request):
+    """
+    Invite crew members to CelesteOS.
+    Requires a valid import_token JWT (issued by verify-download-code).
+    Calls Supabase Admin invite API — Supabase sends magic-link emails,
+    we never handle passwords.
+    """
+    # Validate Bearer token
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail={"success": False, "error": "Unauthorized"})
+    token = auth_header[7:]
+
+    if not IMPORT_JWT_SECRET:
+        raise HTTPException(status_code=500, detail={"success": False, "error": "Invite service not configured"})
+
+    try:
+        payload = jwt.decode(
+            token,
+            IMPORT_JWT_SECRET,
+            algorithms=["HS256"],
+            audience="celeste-import",
+        )
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail={"success": False, "error": "Session expired — please re-verify"})
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail={"success": False, "error": "Invalid session token"})
+
+    # Extract yacht context from token — never trust request body for this
+    yacht_id = payload["yacht_id"]
+    yacht_name = payload.get("yacht_name", "")
+
+    if not req.invitees:
+        raise HTTPException(status_code=400, detail={"success": False, "error": "No invitees provided"})
+    if len(req.invitees) > 20:
+        raise HTTPException(status_code=400, detail={"success": False, "error": "Max 20 invites per request"})
+
+    results = []
+    async with httpx.AsyncClient() as client:
+        for invitee in req.invitees:
+            try:
+                resp = await client.post(
+                    f"{MASTER_SUPABASE_URL}/auth/v1/invite",
+                    json={
+                        "email": invitee.email,
+                        "data": {
+                            "name": invitee.name,
+                            "rank": invitee.rank,
+                            "yacht_id": yacht_id,
+                            "yacht_name": yacht_name,
+                        },
+                    },
+                    headers={
+                        "apikey": MASTER_SUPABASE_KEY,
+                        "Authorization": f"Bearer {MASTER_SUPABASE_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    timeout=15,
+                )
+                if resp.status_code in (200, 201):
+                    results.append({"email": invitee.email, "success": True})
+                else:
+                    body = resp.json()
+                    err = body.get("msg") or body.get("message") or f"HTTP {resp.status_code}"
+                    results.append({"email": invitee.email, "success": False, "error": err})
+            except Exception:
+                results.append({"email": invitee.email, "success": False, "error": "Request failed"})
+
+    sent = sum(1 for r in results if r["success"])
+    logger.info("Crew invite: %d sent, %d failed for yacht %s", sent, len(req.invitees) - sent, yacht_id)
+
+    return {
+        "success": sent > 0,
+        "sent": sent,
+        "failed": len(req.invitees) - sent,
+        "results": results,
     }
 
 
