@@ -151,6 +151,26 @@ class GraphEmailService:
         html = _render_download_code_template(code, yacht_name)
         return self.send_email(to, subject, html)
 
+    def send_invite_email(
+        self,
+        to: str,
+        name: str,
+        rank: str,
+        yacht_name: str,
+        setup_url: str,
+    ) -> bool:
+        """Send a branded crew invite email with a personalised magic link."""
+        if self.debug_mode:
+            print(f"\n{'='*50}")
+            print(f"  INVITE EMAIL — {yacht_name}")
+            print(f"  To: {to}")
+            print(f"  Name: {name} / Rank: {rank}")
+            print(f"  Setup URL: {setup_url}")
+            print(f"{'='*50}\n", flush=True)
+        subject = f"CelesteOS — {yacht_name} — Account invitation"
+        html = _render_invite_template(name, rank, yacht_name, setup_url)
+        return self.send_email(to, subject, html)
+
     def send_welcome_email(self, to: str, yacht_name: str, portal_url: str) -> bool:
         """Send a branded welcome email with the download portal link."""
         if self.debug_mode:
@@ -238,6 +258,41 @@ def _render_welcome_template(yacht_name: str, portal_url: str) -> str:
         <tr><td style="padding:0 48px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="height:1px;background:#1e1b18;"></td></tr></table></td></tr>
         <tr><td style="padding:24px 48px 60px 48px;color:#3d3832;font-size:12px;line-height:1.6;">
           This link is unique to {yacht_name}. Do not forward this email.<br/>
+          Contact: support@celeste7.ai
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""
+
+
+def _render_invite_template(name: str, rank: str, yacht_name: str, setup_url: str) -> str:
+    return f"""\
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#0c0b0a;font-family:-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0c0b0a;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#0c0b0a;text-align:center;">
+        <tr><td style="height:60px;"></td></tr>
+        <tr><td style="padding:0 48px 48px 48px;">
+          <img src="{LOGO_URL}" alt="CelesteOS" width="32" height="32" style="border:0;" />
+        </td></tr>
+        <tr><td style="padding:0 48px 16px 48px;color:#5AABCC;font-size:13px;font-weight:500;letter-spacing:0.5px;">{yacht_name}</td></tr>
+        <tr><td style="padding:0 48px 6px 48px;color:#eae6e1;font-size:16px;font-weight:500;">{name}</td></tr>
+        <tr><td style="padding:0 48px 40px 48px;color:#6e6860;font-size:14px;">Added as {rank}.</td></tr>
+        <tr><td style="padding:0 48px 48px 48px;">
+          <a href="{setup_url}" style="display:inline-block;background:#2B8FB3;color:#ffffff;font-size:14px;font-weight:500;padding:14px 32px;border-radius:8px;text-decoration:none;letter-spacing:0.01em;">
+            Set up account
+          </a>
+        </td></tr>
+        <tr><td style="padding:0 48px;color:#3d3832;font-size:13px;">Link expires in 24 hours.</td></tr>
+        <tr><td style="height:64px;"></td></tr>
+        <tr><td style="padding:0 48px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="height:1px;background:#1e1b18;"></td></tr></table></td></tr>
+        <tr><td style="padding:24px 48px 60px 48px;color:#3d3832;font-size:12px;line-height:1.6;">
+          Added by the vessel operator of {yacht_name}.<br/>
           Contact: support@celeste7.ai
         </td></tr>
       </table>
