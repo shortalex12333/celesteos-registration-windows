@@ -576,13 +576,36 @@ async def invite_users(req: InviteUsersRequest, request: Request):
                     timeout=15,
                 )
 
-                if link_resp.status_code not in (200, 201):
-                    body = link_resp.json()
-                    err = body.get("msg") or body.get("message") or f"HTTP {link_resp.status_code}"
-                    results.append({"email": invitee.email, "success": False, "error": err})
-                    continue
-
                 link_body = link_resp.json()
+
+                # If signup fails because the user already exists, fall back to
+                # magiclink — operator is re-inviting or correcting a name/rank.
+                # magiclink does not return user.id so we skip the user_accounts
+                # write (the row already exists from the first invite).
+                if link_resp.status_code not in (200, 201):
+                    if link_body.get("error_code") == "email_exists":
+                        logger.info("Re-invite detected for %s — falling back to magiclink", invitee.email)
+                        retry_resp = await client.post(
+                            f"{MASTER_SUPABASE_URL}/auth/v1/admin/generate_link",
+                            json={"type": "magiclink", "email": invitee.email, "data": user_metadata},
+                            headers={
+                                "apikey": MASTER_SUPABASE_KEY,
+                                "Authorization": f"Bearer {MASTER_SUPABASE_KEY}",
+                                "Content-Type": "application/json",
+                            },
+                            timeout=15,
+                        )
+                        if retry_resp.status_code in (200, 201):
+                            link_body = retry_resp.json()
+                        else:
+                            err = retry_resp.json().get("msg") or f"HTTP {retry_resp.status_code}"
+                            results.append({"email": invitee.email, "success": False, "error": err})
+                            continue
+                    else:
+                        err = link_body.get("msg") or link_body.get("message") or f"HTTP {link_resp.status_code}"
+                        results.append({"email": invitee.email, "success": False, "error": err})
+                        continue
+
                 action_link = link_body.get("action_link") or link_body.get("properties", {}).get("action_link")
                 if not action_link:
                     results.append({"email": invitee.email, "success": False, "error": "No action_link in response"})
